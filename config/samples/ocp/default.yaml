@@ -1,0 +1,175 @@
+---
+# GatewayClass is a cluster-scoped object. Is it similar to ingresses.config.openshift.io?
+# https://github.com/openshift/api/blob/master/config/v1/types_ingress.go
+apiVersion: networking.x.k8s.io/v1alpha1
+kind: GatewayClass
+metadata:
+  name: default-gatewayclass
+spec:
+  controller: openshift.io/ingress
+  parameters:
+    apiGroup: operator.openshift.io/v1
+    kind: GatewayParameters # future
+    name: default
+---
+kind: GatewayParameters
+metadata:
+  name: default
+spec:
+  # k/v pairs to specify controller config params.
+  domain: apps.dhansen.devcluster.openshift.com
+  replicas: 2
+  endpointPublishingStrategy:
+    type: LoadBalancerService
+    loadBalancer:
+      scope: External
+  tlsSecurityProfile:
+    type: Intermediate
+  nodePlacement:
+    nodeSelector:
+      beta.kubernetes.io/os: linux
+      node-role.kubernetes.io/worker: ''
+---
+# Notes:
+# 1. Gateway does not contain a `replicas` field. The Istio `gateway` resource contains a `selector` field to match
+#    one or more labels that indicate a specific set of pods on which the `gateway` configuration should be applied.
+apiVersion: networking.x.k8s.io/v1alpha1
+kind: Gateway
+metadata:
+  name: default-gateway
+  namespace: openshift-ingress-operator
+  # The draft spec does not specify labels. Can labels be used to bind gateway<>routes?
+  labels:
+    foo: bar
+spec:
+  # No concept of a `class` for openshift/ingresscontroller.
+  class: default-gatewayclass
+  # If listeners is empty, defaults come from GatewayClass
+  listeners:
+    - address:
+        type: IPAddress
+        address: 1.2.3.4 # TBD where this address comes from.
+      ports:
+        - port: 80
+          protocols:
+            - http
+          extension:
+            apiGroup: listener.openshift.io/v1
+            kind: MyProtocolListener #future
+            name: my-protocol-listener
+          tls:
+            # A local object ref, so the secret must be in same ns as the `Gateway`.
+            # Does certificates and minimumVersion need to be specific for a redirect
+            # 80 > 443 listener?
+            options:
+              # Istio defines Server.TLSOptions.TLSmode for similar functionality:
+              # https://istio.io/docs/reference/config/networking/gateway/#Server-TLSOptions-TLSmode
+              # Istio options: PASSTHROUGH, SIMPLE, MUTUAL, AUTO_PASSTHROUGH and ISTIO_MUTUAL.
+              # openshift/router options: passthrough, edge and reencrypt.
+              termination: edge
+              # Istio defines Server.TLSOptions.httpsRedirect type bool for similar functionality:
+              # https://istio.io/docs/reference/config/networking/gateway/#Server-TLSOptions
+              # Can this approach suffice for openshift/route?
+              insecureEdgeTerminationPolicy: Redirect
+        - port: 443
+          protocols:
+            - https # Can tls be an option that would use SNI?
+          tls:
+            # A local object ref, so the secret must be in same ns as the `Gateway`.
+            certificates:
+              - apiGroup: v1
+                kind: Secret
+                name: router-certs
+            minimumVersion: TLS_1_1
+            # Options are implementation specific.
+            options:
+              # Istio defines Server.TLSOptions.TLSmode for similar functionality:
+              # https://istio.io/docs/reference/config/networking/gateway/#Server-TLSOptions-TLSmode
+              # Istio options: PASSTHROUGH, SIMPLE, MUTUAL, AUTO_PASSTHROUGH and ISTIO_MUTUAL.
+              # openshift/router options: passthrough, edge and reencrypt.
+              termination: passthrough
+              # Istio defines Server.TLSOptions.httpsRedirect type bool for similar functionality:
+              # https://istio.io/docs/reference/config/networking/gateway/#Server-TLSOptions
+              # Can this approach suffice for openshift/route?
+              insecureEdgeTerminationPolicy: Redirect
+          extension:
+            apiGroup: sample.vendor.io
+            kind: MyProtocolListener
+            name: my-protocol-listener
+  routes:
+    - name: oauth-openshift
+      namespace: openshift-authentication
+      kind: HTTPSRoute
+    - name: console
+      namespace: openshift-console
+      kind: HTTPSRoute
+    - name: downloads
+      namespace: openshift-console
+      kind: HTTPRoute
+    - name: alertmanager-main
+      namespace: openshift-monitoring
+      kind: HTTPRoute
+    - name: grafana
+      namespace: openshift-monitoring
+      kind: HTTPSRoute
+    - name: prometheus-k8s
+      namespace: openshift-monitoring
+      kind: HTTPRoute
+    - name: thanos-querier
+      namespace: openshift-monitoring
+      kind: HTTPRoute
+---
+# Note: HTTPSRoute is undefined in the draft spec.
+kind: HTTPSRoute
+name: oauth-openshift
+namespace: openshift-authentication
+gateways:
+  # Can selectors be used to bind this route to one or more gateways?
+  - namespace: openshift-ingress-operator
+    name: gateway-default
+# WildcardPolicy is not defined in the draft spec.
+wildcardPolicy: None
+rules:
+  - match:
+      # Should a route support multiple hosts?
+      # Replace with cluster ingresses.config.openshift.io.spec.domain.
+      host: oauth-openshift.apps.dhansen.devcluster.openshift.com
+      # If path is unspecified, should the prefix default to `/`?
+      path:
+        prefix: /
+    action:
+      backend:
+        # Name of Service object in the same namespace
+        name: oauth-openshift
+        # Port is not defined in the draft spec. Should port be a string representing a port
+        # name or number or have a defined schema? openshift/route uses targetPort of a service.
+        port: https
+        # Should a `forwardingRules` schema be defined where `weight` is a supported type.
+        weight: 100
+---
+kind: HTTPRoute
+name: downloads
+namespace: openshift-console
+gateways:
+  # Can selectors be used to bind this route to one or more gateways?
+  - namespace: openshift-ingress-operator
+    name: gateway-default
+# WildcardPolicy is not defined in the draft spec.
+wildcardPolicy: None
+rules:
+  - match:
+      # Should a route support multiple hosts?
+      # Replace with cluster ingresses.config.openshift.io.spec.domain.
+      host: downloads-openshift-console.apps.dhansen.devcluster.openshift.com
+      # If path is unspecified, should the prefix default to `/`?
+      path:
+        prefix: /
+    action:
+      backend:
+        # Name of Service object in the same namespace
+        name: downloads
+        # Port is not defined in the draft spec. Should port be a string representing a port
+        # name or number or have a defined schema? openshift/route uses targetPort of a service.
+        port: http
+        # Should a `forwardingRules` schema be defined where `weight` is a supported type.
+        weight: 100
