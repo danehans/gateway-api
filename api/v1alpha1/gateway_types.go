@@ -70,10 +70,26 @@ const (
 
 // Listener defines a
 type Listener struct {
-	// Name can be used to tie this Listener to a ListenerStatus entry with the
-	// same name. Each listener must have a unique name within a Gateway. This
-	// must be a valid DNS_LABEL.
-	Name string `json:"string"`
+	// Name is a name of the listener and should be specified as
+	// an RFC 1035 DNS_LABEL [1]. Optionally, a name may include a
+	// wildcard character in the left-most component (i.e. *.example.com).
+	//
+	// [1] https://tools.ietf.org/html/rfc1035
+	//
+	// Each listener of a Gateway must have a unique name. Longest match
+	// is performed when selecting a listener. Name is used for the
+	// following features:
+	//
+	// * Name is used for ListenerStatus association.
+	//
+	// * For generating a server certificate when the TLS configuration
+	//   of an HTTPS listener is specified without a certificate. Note
+	//   that a wildcard certificate will be generated if Name contains "*".
+	//
+	// Support: Core
+	//
+	// +required
+	Name string `json:"name"`
 	// Address requested for this listener. This is optional and behavior
 	// can depend on GatewayClass. If a value is set in the spec and
 	// the request address is invalid, the GatewayClass MUST indicate
@@ -93,9 +109,11 @@ type Listener struct {
 	// Support:
 	// +optional
 	Protocol *string `json:"protocol,omitempty"`
-	// TLS configuraton for the Listener.
+	// TLS is the TLS configuration for the Listener. If unspecified,
+	// the listener will not support TLS connections.
 	//
-	// Support:
+	// Support: Core
+	//
 	// +optional
 	TLS *ListenerTLS `json:"tls,omitempty"`
 	// Extension for this Listener.
@@ -149,15 +167,20 @@ const (
 // - aws: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html#describe-ssl-policies
 // - azure: https://docs.microsoft.com/en-us/azure/app-service/configure-ssl-bindings#enforce-tls-1112
 type ListenerTLS struct {
-	// Certificate is a reference to a Kubernetes object containing the identity
-	// certificate bound to the listener. Certificate is used when an HTTPRoute
-	// does not specify a certificate.
+	// Certificates is a reference to one or more Kubernetes objects each containing
+	// an identity certificate that is bound to the listener. The hostname in a TLS
+	// SNI client hello message is used for certificate matching and route hostname
+	// selection.
+	//
+	// If unspecified, a certificate is generated using the listener's name.
 	//
 	// If apiGroup and kind are empty, defaults to a Kubernetes Secret resource.
 	//
 	// Support: Core (Kubernetes Secrets)
 	// Support: Implementation-specific (Other resource types)
-	Certificate core.TypedLocalObjectReference `json:"certificate,omitempty"`
+	//
+	// +optional
+	Certificates []core.TypedLocalObjectReference `json:"certificates,omitempty"`
 	// MinimumVersion of TLS allowed. It is recommended to use one of
 	// the TLS_* constants above. Note: this is not strongly
 	// typed to allow implementation-specific versions to be used without
