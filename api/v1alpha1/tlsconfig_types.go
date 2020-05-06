@@ -36,20 +36,30 @@ const (
 // - aws: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html#describe-ssl-policies
 // - azure: https://docs.microsoft.com/en-us/azure/app-service/configure-ssl-bindings#enforce-tls-1112
 type TLSConfig struct {
-	// CertificateRefs is a list of references to Kubernetes objects that each
-	// contain an identity certificate.  The host name in a TLS SNI client hello
-	// message is used for certificate matching and route host name selection.
-	// The SNI server_name must match a route host name for the Gateway to route
-	// the TLS request.  If an entry in this list omits or specifies the empty
-	// string for both the group and the resource, the resource defaults to "secrets".
-	// An implementation may support other resources (for example, resource
-	// "mycertificates" in group "networking.acme.io").
+	// ServerCertificateRefs is a list of references to Kubernetes objects each
+	// containing a server identity certificate and private key. The host name
+	// in a TLS SNI client hello message is used for certificate matching and
+	// route host name selection. The SNI server_name must match a route host
+	// name for the Gateway to route the TLS request.  If an entry in this list
+	// omits or specifies the empty string for both the group and the resource,
+	// the resource defaults to "secrets". An implementation may support other
+	// resources (for example, resource "mycerts" in group "networking.acme.io").
 	//
 	// Support: Core (Kubernetes Secrets)
 	// Support: Implementation-specific (Other resource types)
 	//
-	// +required
-	CertificateRefs []CertificateObjectReference `json:"certificateRefs,omitempty" protobuf:"bytes,1,rep,name=certificateRefs"`
+	ServerCertificateRefs []ServerCertificateObjectReference `json:"serverCertificateRefs,omitempty" protobuf:"bytes,1,rep,name=serverCertificateRefs"`
+	// CertificateAuthorityRefs is a list of references to Kubernetes objects
+	// each containing a Certificate Authority certificate for authenticating
+	// the client-side of a TLS connection. If an entry in this list omits or
+	// specifies the empty string for both the group and the resource, the
+	// resource defaults to "configmaps". An implementation may support other
+	// resources (for example, resource "mycerts" in group "networking.acme.io").
+	//
+	// Support: Core (Kubernetes ConfigMap)
+	// Support: Implementation-specific (Other resource types)
+	//
+	CertificateAuthorityRefs []CertificateAuthorityObjectReference `json:"certificateAuthorityRefs,omitempty" protobuf:"bytes,2,rep,name=certificateAuthorityRefs"`
 	// MinimumVersion of TLS allowed. It is recommended to use one of
 	// the TLS_* constants above. Note: MinimumVersion is not strongly
 	// typed to allow implementation-specific versions to be used without
@@ -60,7 +70,7 @@ type TLSConfig struct {
 	// values.
 	//
 	// +optional
-	MinimumVersion *string `json:"minimumVersion" protobuf:"bytes,2,opt,name=minimumVersion"`
+	MinimumVersion *string `json:"minimumVersion" protobuf:"bytes,3,opt,name=minimumVersion"`
 	// Options are a list of key/value pairs to give extended options
 	// to the provider.
 	//
@@ -70,11 +80,17 @@ type TLSConfig struct {
 	// construct.
 	//
 	// Support: Implementation-specific.
-	Options map[string]string `json:"options" protobuf:"bytes,3,rep,name=options"`
+	Options map[string]string `json:"options" protobuf:"bytes,4,rep,name=options"`
 }
 
-// CertificateObjectReference identifies a certificate object within a known
-// namespace.
+// ServerCertificateObjectReference identifies a server certificate object within a
+// known namespace.
 //
 // +k8s:deepcopy-gen=false
-type CertificateObjectReference = LocalObjectReference
+type ServerCertificateObjectReference = LocalObjectReference
+
+// CertificateAuthorityObjectReference identifies a Certificate Authority
+// certificate object within a known namespace.
+//
+// +k8s:deepcopy-gen=false
+type CertificateAuthorityObjectReference = LocalObjectReference
