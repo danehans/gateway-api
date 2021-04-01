@@ -30,6 +30,7 @@ import (
 	"k8s.io/klog/v2"
 
 	v1alpha1 "sigs.k8s.io/gateway-api/apis/v1alpha1"
+	"sigs.k8s.io/gateway-api/apis/v1alpha1/validation"
 )
 
 var (
@@ -115,24 +116,31 @@ var (
 		Version:  v1alpha1.SchemeGroupVersion.Version,
 		Resource: "httproutes",
 	}
+	gateway = meta.GroupVersionResource{
+		Group:    v1alpha1.SchemeGroupVersion.Group,
+		Version:  v1alpha1.SchemeGroupVersion.Version,
+		Resource: "gateways",
+	}
 )
 
 func routesEqual(new v1alpha1.HTTPRoute, old v1alpha1.HTTPRoute) bool {
 	return reflect.DeepEqual(new.Spec, old.Spec)
 }
 
-func handleValidation(request admission.AdmissionRequest) (
-	*admission.AdmissionResponse, error) {
+func gatewaysEqual(new, old *v1alpha1.Gateway) bool {
+	return reflect.DeepEqual(new.Spec, old.Spec)
+}
+
+func handleValidation(request admission.AdmissionRequest) (*admission.AdmissionResponse, error) {
 	var response admission.AdmissionResponse
 	var ok bool
 	var message string
-	var err error
 
 	switch request.Resource {
 	case httpRoute:
 		hRoute := v1alpha1.HTTPRoute{}
 		deserializer := codecs.UniversalDeserializer()
-		_, _, err = deserializer.Decode(request.Object.Raw, nil, &hRoute)
+		_, _, err := deserializer.Decode(request.Object.Raw, nil, &hRoute)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +149,7 @@ func handleValidation(request admission.AdmissionRequest) (
 		// nolint:exhaustive
 		switch request.Operation {
 		case admission.Create:
-			ok, message, err = ValidateHTTPRoute(hRoute)
+			ok, message, err = ValidateHTTPRoute(hRoute) // TODO: Use validation pkg
 			if err != nil {
 				return nil, err
 			}
@@ -153,7 +161,7 @@ func handleValidation(request admission.AdmissionRequest) (
 			}
 			// validate if routes are changed
 			if !routesEqual(hRoute, oldRoute) {
-				ok, message, err = ValidateHTTPRoute(hRoute)
+				ok, message, err = ValidateHTTPRoute(hRoute) // TODO: Use validation pkg
 				if err != nil {
 					return nil, err
 				}
@@ -163,13 +171,40 @@ func handleValidation(request admission.AdmissionRequest) (
 		default:
 			return nil, fmt.Errorf("unknown operation '%v'", string(request.Operation))
 		}
-	default:
-		return nil, fmt.Errorf("unknown resource '%v'", request.Resource.Resource)
+	case gateway:
+		gw := &v1alpha1.Gateway{}
+		deserializer := codecs.UniversalDeserializer()
+		_, _, err := deserializer.Decode(request.Object.Raw, nil, gw)
+		if err != nil {
+			return nil, err
+		}
+		// The admission hook is only configured for create & update, so we can
+		// ignore explicit validation for Connect & Delete.
+		// nolint:exhaustive
+		switch request.Operation {
+		case admission.Create:
+			if fieldErr := validation.ValidateGateway(gw); fieldErr != nil {
+				ok = false
+				message = fmt.Sprint(fieldErr)
+			}
+		case admission.Update:
+			oldGW := &v1alpha1.Gateway{}
+			_, _, err = deserializer.Decode(request.OldObject.Raw, nil, oldGW)
+			if err != nil {
+				return nil, err
+			}
+			// validate if gateway has changed
+			if !gatewaysEqual(gw, oldGW) {
+				if fieldErr := validation.ValidateGateway(gw); fieldErr != nil {
+					ok = false
+					message = fmt.Sprint(fieldErr)
+				}
+			}
+		}
+		default:
+			return nil, fmt.Errorf("unknown resource '%v'", request.Resource.Resource)
 	}
 
-	if err != nil {
-		return nil, err
-	}
 	response.UID = request.UID
 	response.Allowed = ok
 	response.Result = &meta.Status{
