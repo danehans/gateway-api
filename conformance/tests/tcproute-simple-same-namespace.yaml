@@ -1,0 +1,30 @@
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: gateway-conformance-infra-test
+  namespace: gateway-conformance-infra
+spec:
+  parentRefs:
+  - name: gateway-tcproute
+    namespace: gateway-conformance-infra
+  rules:
+  - backendRefs:
+    - name: infra-backend-v1
+      port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: Gateway
+metadata:
+  name: gateway-tcproute
+  namespace: gateway-conformance-infra
+spec:
+  gatewayClassName: "{GATEWAY_CLASS_NAME}"
+  listeners:
+  - name: tcp
+    port: 8080
+    protocol: TCP
+    allowedRoutes:
+      namespaces:
+        from: Same
+      kinds:
+      - kind: TCPRoute
